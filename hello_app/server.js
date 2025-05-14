@@ -18,6 +18,9 @@ const pool = mysql.createPool({
 });
 
 app.use(express.json());
+const usersRouter = require('./routes/users');
+app.use('/users', usersRouter);
+
 
 const ajv = new Ajv();
 ajvFormats(ajv);
@@ -63,14 +66,43 @@ function authenticateToken(req, res, next) {
   });
 }
 
-// LOGIN
+// CREATE USER (registrieren)
+app.post('/user/register', async (req, res) => {
+  const { username, password } = req.body;
+
+  // Prüfen, ob der Benutzername bereits existiert
+  try {
+    const [existingUser] = await pool.query("SELECT * FROM user WHERE username = ?", [username]);
+    if (existingUser.length > 0) {
+      return res.status(409).json({ message: "Benutzername bereits vergeben" });
+    }
+
+    // Benutzer in der Datenbank anlegen
+    const [result] = await pool.execute(
+      "INSERT INTO user (username, password) VALUES (?, ?)",
+      [username, password]
+    );
+
+    // Token generieren
+    const token = generateAccessToken({ username });
+
+    // Erfolgreiche Antwort
+    res.status(201).json({ message: "Benutzer erstellt", token });
+  } catch (err) {
+    res.status(500).json({ message: "Datenbankfehler", error: err.message });
+  }
+});
+
+// LOGIN (Mit einem existierenden Benutzer einloggen)
 app.post('/user/login', async (req, res) => {
   const { username, password } = req.body;
   try {
     const [results] = await pool.query("SELECT * FROM user WHERE username = ? AND password = ?", [username, password]);
+
     if (results.length === 0) {
       return res.status(409).json({ message: "Benutzername oder Passwort falsch" });
     }
+
     const token = generateAccessToken({ username });
     res.status(200).json({ token, message: "Erfolgreich eingeloggt" });
   } catch (err) {
